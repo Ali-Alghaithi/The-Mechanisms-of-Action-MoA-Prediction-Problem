@@ -1,0 +1,716 @@
+---
+title: "The Mechanisms of Action (MoA) Prediction Problem"
+author: "Ali Alghaithi"
+date: "9/22/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+opts_chunk$set(fig.align='center', dpi=100, message=FALSE, warning=FALSE, cache=T,echo=FALSE)
+output <- opts_knit$get("rmarkdown.pandoc.to")
+if(!is.null(output)) {
+  if (output=="html") opts_chunk$set(out.width = '400px') else
+    opts_chunk$set(out.width='.6\\linewidth')
+}
+```
+
+# 1: Introduction
+
+## Background, Significance ,and Research question(s)
+
+The Mechanisms of Action (MoA) Prediction is a competition hosted in Kaggle by the Laboratory for Innovation Science at Harvard (LISH). This challenge was developed to advance drug development within improvements to MoA prediction algorithms. It is designed to help to advance the algorithm that classifies drugs based on their biological activity.  With all the great technologies around us today, the drug discovery process has evolved a lot and building a more potent targeted model based on an understanding of the underlying biological mechanism of disease in biology. Biological activity of a given molecule, scientists assign a label referred to as mechanism-of-action or MoA for short. Pharmaceutical drug development intends to classify proteins connected to a particular disease and then produce molecules to target those proteins. The MoA of a molecule encodes its biological activity. This dataset describes the responses of 100 different types of human cells to various drugs. Those response patterns will be used to classify the MoA response.
+
+In this project, the approach is to treat a sample of human cells with the drug and then analyze the cellular responses with algorithms that seek for the relationship to known patterns in large genomic databases, such as libraries of gene expression or cell viability patterns of drugs with known MoAs. In summary,  the research question this project is trying to answer is " Will using gene expression data and cell viability data can improve drog development to predict multiple targets of the Mechanism of Action (MoA) response(s) of different samples?"
+
+## 2:  Data
+
+## 2.1: Source of data or data collection
+
+The dataset that will be used is a combination of gene expression and cell viability data. The data have been collected using the newest technologies measures concurrently human cells’ responses to drugs of 100 different cell types. The data has MoA annotations for around 5,000 drugs in this dataset. The provided data is presented as a train and test files. For the training predictors, we are given two files, such as the training predictors (train_features.csv) and the targets (train_targets_scored.csv). The rows for these files represent specific treatment. We are using the training predictors to build a model to predict the train_targets_scored.csv class probabilities for the test file test_features.csv. The (train_targets_nonscored.csv) is an optional file that we can use to help with analysis but not needed to be predicted. 
+
+```{r}
+#### Loading the Data
+library(readr)
+train <- read_csv("~/Box/Advance NL Class/Final_Project/train_features.csv")
+targets <- read_csv("~/Box/Advance NL Class/Final_Project/train_targets_scored.csv")
+targets_non <- read_csv("~/Box/Advance NL Class/Final_Project/train_targets_nonscored.csv")
+test <- read_csv("~/Box/Advance NL Class/Final_Project/test_features.csv")
+```
+## 2.2: Overview of raw data  and Variable introduction 
+
+### Train Data
+
+After exploring the data from the bellow table we see that sig_id is the unique primary key of the sample. In total, the train data has almost 900 columns. The variables that have the term “g-” encode gene expression data (there are 772 of those). on the other hand, the term “c-” (100 in total) shows cell viability data. In addition, the data also has 3 “cp_” features where the cp_type variable indicates the sample treatment, while cp_time and cp_dose encode the duration and dosage of the treatment. The bellow table only shows the first 4 rows and the first 6 columns of the train data with an additional to column number 850 and 860.
+```{r}
+head(train[1:4,c(1:6,850,860)])
+```
+```{r}
+library(dplyr)
+#Number of rows and columns
+nrow(train); ncol(train) 
+# “g-” term
+train %>% select(starts_with("g-")) %>% ncol(); 
+# “c-” term
+train %>% select(starts_with("c-")) %>% ncol(); 
+```
+
+
+### Targets Data
+
+The Targets data has 23814 rows and 207 columns. The sig_id variable the unique primary key of the sample. On the other hand, the other column represents the target response with different binary outputs. In summary, this data is the binary MoA targets that are scored. The bellow table only shows the first 3 rows and first 4 columns.
+
+```{r}
+head(targets[1:3,1:4])
+```
+
+
+
+### Targets_non Data
+
+In this optional data, we find that the additional non-scored targets contain about 400 classes which are almost double than our target data. it odes provide a lot of information. the only disadvantage of this knowledge that our train data not much connected to the classes we see in this dataset. the bellow table only shows the first 4 rows and the first 5 columns of the non-scored targets data.
+```{r}
+head(targets_non[1:4,1:4])
+```
+
+### Test Data
+
+The below table only shows the first 4 rows and first 6 columns of the test data with an additional to column number 850 and 860. The test data contains the same features as the train data and has about 4000 rows compared to the 24000 rows of the training data. 4000 samples vs 200 targets is not a very high ratio.
+
+```{r}
+head(test[1:4,c(1:6,850,860)])
+```
+
+### Data Quality
+
+After checking for quality, the sig_id values are indeed unique in the training data. In addition, we also find that Train and Target sig_id values do not match.
+
+## 2.3: Missing data and imputation methods
+
+- There are not any missing values in the Train data as well as the Targets data
+```{r}
+#sum(is.na(train))
+#sum(is.na(targets))
+```
+
+## 2.4: Evaluation
+
+For every sig_id you will be predicting the probability that the sample had a positive response for each target. For N rows and M targets, you will be making $N×M$ predictions. Submissions are scored by the log loss:
+
+- $\text{Score} = - \frac{1}{M}\sum_{m=1}^{M} \frac{1}{N} \sum_{i=1}^{N} \left[ y_{i,m} \log(\hat{y}_{i,m}) + (1 - y_{i,m}) \log(1 - \hat{y}_{i,m})\right]$
+
+- $N$ is the number of sig_id observations in the test data $i=1,…,N$
+- $M$ is the number of scored MoA targets $m=1,…,M$
+- $\hat{y}_{i,m}$ is the predicted probability of a positive MoA response for a sig_id
+- ${y}_{i,m}$ is the ground truth, 1 for a positive response, 0 otherwise
+- $log()$ is the natural (base e) logarithm
+
+## 2.5: Data re-structuring (data wrangling)
+
+Since the challenge is a multi-label classification problem. Since the description from Kaggle that drug samples actually can have multiple MoA’s. Data re-structuring is needed based on what way to approach this problem. it is very useful to check the distribution of how many target classes can be active at once. 
+ 
+ 
+```{r}
+ library(dplyr)
+ rowstats <-tibble(targets) %>% 
+  select(-sig_id) %>% 
+  rowwise() %>% 
+  mutate(sum = sum(c_across(everything()))) %>% 
+  select(sum) %>% 
+  ungroup()
+ 
+```
+
+```{r}
+library(ggplot2)
+rowstats %>% 
+  count(sum) %>% 
+  add_tally(n, name = "total") %>% 
+  mutate(perc = n/total) %>% 
+  mutate(sum = as.factor(sum)) %>% 
+  ggplot(aes(sum, n, fill = sum)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("%.2f%%", perc*100)), nudge_y = 500) +
+  # scale_y_continuous(labels = scales::percent) +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(legend.position = "none", plot.subtitle = element_text(size = 10)) +
+  labs(x = "", y = "", title = "Number of Activations per Sample")
+
+
+```
+From the above plot, we can see that  39% of training samples have no MoA annotations at all. Almost 52% of samples have exactly 1 MoA annotation. In addition, 5% of cases have 2 MoAs, and the other cases are rarer. We might need to check more about what we have been seeing so far. The next plots should explain more and give us more insight. 
+ 
+```{r}
+library(tidyverse)
+ target_sums <- targets %>% 
+  select(-sig_id) %>% 
+  summarise(across(everything(), sum)) %>% 
+  pivot_longer(everything(), names_to = "target", values_to = "sum")
+p1 <- target_sums %>% 
+  ggplot(aes(sum)) +
+  geom_density(fill = "darkorange") +
+  geom_vline(xintercept = 40, linetype = 2) +
+  scale_x_log10() +
+  theme_minimal() +
+  theme(legend.position = "none", plot.subtitle = element_text(size = 10)) +
+  labs(x = "", y = "", title = "MoA count per target class", subtitle = "Dashed line: 40")
+p2 <- target_sums %>% 
+  arrange(desc(sum)) %>% 
+  head(5) %>% 
+  mutate(target = str_replace_all(target, "_", " ")) %>% 
+  ggplot(aes(reorder(target, sum, FUN = min), sum, fill = sum)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_gradient(low = "blue1", high = "blue4") +
+  scale_x_discrete(labels = function(x) lapply(str_wrap(x, width = 25), paste, collapse="\n")) +
+  theme_minimal() +
+  theme(legend.position = "none", plot.subtitle = element_text(size = 10)) +
+  labs(x = "", y = "", title = "Classes with most MoAs")
+
+p3 <- target_sums %>% 
+  arrange(sum) %>% 
+  head(5) %>%  
+  mutate(target = str_replace_all(target, "_", " ")) %>% 
+  ggplot(aes(reorder(target, sum, FUN = min), sum, fill = sum)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_gradient(low = "red4", high = "red1") +
+  scale_x_discrete(labels = function(x) lapply(str_wrap(x, width = 25), paste, collapse="\n")) +
+  theme_minimal() +
+  theme(legend.position = "none", plot.subtitle = element_text(size = 10)) +
+  labs(x = "", y = "", title = "Classes with fewest MoAs")
+
+library(ggpubr)
+figure <- ggarrange(p2, p3,
+                    labels = c("A", "B", "C"),
+                    ncol = 1, nrow = 2)
+figure
+ 
+```
+The rare case of only 1 positive MoA is measured for the two dark-red cases in plot B. The top-scoring classes can be seen in plot A. Inhibitors and antagonists are both inside both plots. 
+ 
+
+Now, we also have a look at the Train data and investigate the variables.  
+
+```{r}
+library(ggplot2)
+library(ggthemes)
+
+p1 <- train %>% 
+  count(cp_type) %>% 
+  add_tally(n, name = "total") %>% 
+  mutate(perc = n/total) %>% 
+  ggplot(aes(cp_type, perc, fill = cp_type)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("%s", n)), nudge_y = 0.02) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values = c("grey70", "violetred")) +
+  theme_hc() +
+  theme(legend.position = "none", plot.subtitle = element_text(size = 10)) +
+  labs(x = "", y = "", fill = "State", title = "Sample treatment", subtitle = "(Compound vs Control)")
+
+p2 <- train %>% 
+  count(cp_dose) %>% 
+  add_tally(n, name = "total") %>% 
+  mutate(perc = n/total) %>% 
+  ggplot(aes(cp_dose, perc, fill = cp_dose)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("%s", n)), nudge_y = 0.02) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values = c("darkblue", "darkred")) +
+  theme_hc() +
+  theme(legend.position = "none", plot.subtitle = element_text(size = 10)) +
+  labs(x = "", y = "", fill = "State", title = "Treatment Dose", subtitle = "(high vs low)")
+
+p3 <- train %>% 
+  count(cp_time) %>% 
+  mutate(cp_time = as.factor(cp_time)) %>% 
+  add_tally(n, name = "total") %>% 
+  mutate(perc = n/total) %>% 
+  ggplot(aes(cp_time, perc, fill = cp_time)) +
+  geom_col() +
+  geom_text(aes(label = sprintf("%s", n)), nudge_y = 0.01) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_brewer(type = "seq", palette = "Oranges") +
+  theme_hc() +
+  theme(legend.position = "none", plot.subtitle = element_text(size = 10)) +
+  labs(x = "", y = "", fill = "State", title = "Treatment duration", subtitle = "(Units of hours)")
+
+
+
+library(ggpubr)
+figure <- ggarrange(p1, p2, p3,
+                    labels = c("A", "B", "C"),
+                    ncol = 3, nrow = 1)
+figure
+
+```
+
+To understand how the sample was treated in terms of dose, duration, and whether it was a “real” treatment or control. The bellow plots can more explain the data using the ggplot2 library.  According to the plots, most of the treatments are compound treatments and less of control perturbation treatments. The treatment dose variable is either D1(high) of D2(Low), and both responses are evenly balanced. For the treatment duration, we can also say all the responses are balanced.
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+p1<- train %>% 
+  select(sig_id, starts_with("g-")) %>% 
+  select(seq(1,5)) %>% 
+  pivot_longer(starts_with("g-"), names_to = "feature", values_to = "value") %>% 
+  ggplot(aes(value, fill = feature)) +
+  geom_density() +
+  facet_wrap(~ feature) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(x = "", y = "", fill = "State", title = "Distributions for gene expression features")
+
+p2<- train %>% 
+  select(sig_id, starts_with("c-")) %>% 
+  select(seq(1,5)) %>% 
+  pivot_longer(starts_with("c-"), names_to = "feature", values_to = "value") %>% 
+  ggplot(aes(value, fill = feature)) +
+  geom_density() +
+  scale_fill_brewer(palette = "Set3") +
+  facet_wrap(~ feature) +
+  theme_minimal() +
+  theme(legend.position = "none", plot.subtitle = element_text(size = 10)) +
+  labs(x = "", y = "", fill = "State", title = "Distributions for cell viability features")
+
+library(ggpubr)
+figure <- ggarrange(p1, p2,
+                    labels = c("A", "B"),
+                    ncol = 1, nrow = 2)
+figure
+
+
+```
+ 
+- Plot A: The variables with the term gene are labeled from “g-0” to “g-771,” and they have numeric values. From the above plot where we are looking at the first 4 gene features where we see their distributions to be normal. 
+
+- Plot B: Similar to plot A, the cell viability features are unknown, labeled from “c-0” to “c-99”; 100 features. The distributions look normal as well. 
+
+However, we might need to check more and see why both distributions are very flat at both ends. Also, we are seeing that a small increase at -10 in plot B. 
+
+
+In conclusion, we are not sure how we need to instruct the data yet but we do have a great insight into our data. It is important to also investigate the interaction between predictors to see if we can find any correlations that might lead us to reduce some of the variables. 
+
+We must understand the relationship between predictor features and the target classes. The approach is to look at the interactions between targets and predictors in terms of their corresponding distributions.N ext, we’ll check whether the number of MoAs in a row influences the cell or gene distributions. Here, for the sake of sample size, we lump together the instances with 3 or more MoAs into the group “3+”. We’re only looking at compound treatments; e.g. no control rows. For some visual variety, we’ll be using violin plots (i.e. vertical, mirrored density plots):
+```{r} 
+stats_all <- train %>% 
+  select(starts_with("cp"), num_range(prefix = "g-", c(8, 525)), num_range(prefix = "c-", c(14, 42))) %>% 
+  bind_cols(rowstats)
+```
+```{r}
+library(stringr)
+stats_all %>% 
+  filter(cp_type == "trt_cp") %>% 
+  mutate(cp_time = as.factor(str_c("Duration ", cp_time, "h"))) %>% 
+  mutate(sum = if_else(sum >= 3, "3+", as.character(sum))) %>% 
+  mutate(sum = as.factor(sum)) %>% 
+  pivot_longer(starts_with(c("g-", "c-")), names_to = "feature", values_to = "value") %>% 
+  ggplot(aes(sum, value, fill = sum)) +
+  # geom_violin(draw_quantiles = c(0.25, 0.75)) +
+  geom_violin() +
+  facet_grid(feature ~ cp_time) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(x = "Sum of active MoAs per row", y = "Cell or Gene values", fill = "Rowwise sum of MoAs",
+       title = "Selected cell & gene distributions for different counts of MoAs per row",
+       subtitle = "Facetted by cell/gene vs treatment duration")
+```
+
+
+There is a difference between those cases with 0 or 1 vs. 2 or more MoAs.  We see that the 2 MoA category accounts for most of the negative tail in the cell features. We also see that the “3+” group looks more similar to the “0” and “1” group. Also, we note that the “3+” group has a tiny sample size in this data. 
+
+There are some slight differences between the cp_time duration for the “2” and “3+” groups. Both the “0” and the “1” group look pretty stable across the board.
+
+Next, we can check for the treatment doses to see if we can see any relationships.  
+```{r}
+stats_all %>% 
+  filter(cp_type == "trt_cp") %>% 
+  mutate(sum = if_else(sum >= 3, "3+", as.character(sum))) %>% 
+  mutate(sum = as.factor(sum)) %>% 
+  pivot_longer(starts_with(c("g-", "c-")), names_to = "feature", values_to = "value") %>% 
+  ggplot(aes(value, fill = cp_dose)) +
+  geom_density(alpha = 0.5) +
+  facet_grid(feature ~ sum) +
+  theme_minimal() +
+  theme(legend.position = "top") +
+  labs(y = "", x = "Cell or Gene values", fill = "Dose",
+       title = "Selected cell & gene distributions for different counts of MoAs per row",
+       subtitle = "Colour-coded treatment dose")
+```
+Almost all the distributions show perfect overlap, and there are not any differences. Again we see how “MoA = 2 is different from the others.
+
+
+
+
+## 2.6: New variable creation (optional)
+
+Agina as we are dealing with a multilabel classification problem with many predictors, we for sure have to reduce the number of our variables first and then creat any necessary variable if needed.
+
+## 2.7: Overview of cleaned data (e.g. screenshot)
+
+The data is well cleaned, and that would save us a lot of time. For the moment, we would need to do some preprocessing to get the data in the right shape for the model we are planning to use. For example, we join the targets for the training data.
+
+
+
+
+## Methods:
+
+### Principal Component Analysis (PCA)
+
+The PCA is a dimensionality reduction method that is often used to reduce the dimensionality of large data sets, by transforming a large set of variables into a smaller one that still contains most of the information in the large set. PCA has been applied to the train data set that only includes gene and cell expression which is about 871 features. In the next step, we have the proportion of variance explained by each component which we will need to decide the number of components. We calculated that the first seven components explain most of the variance, however,  for a more visual approach, we plot the explained variance on a line graph. Here we plot the ratio of variance explained by each component using a line graph. This PCA chart helps us to decide the number of principal components to be taken for the modeling algorithm. During the Final submission to Kaggle, we decided to choose the first 200 since it explained almost 80% of the variance. For compression, we also tried 50 PCAs to compare. 
+
+```{r}
+pca_train <- train[5:876]
+pca = prcomp(pca_train,scale. = T)
+loadings <- as.data.frame(pca$x)
+Matrix <- pca$rotation
+std_dev <- pca$sdev
+pr_comp_var <- std_dev^2
+prop_var_ex <- pr_comp_var/sum(pr_comp_var)
+plot(cumsum(prop_var_ex), xlab = "Principal Component",ylab = "Proportion of Variance Explained",type = "b")
+
+
+```
+
+
+
+### mlr-package:  Machine Learning in R
+
+Multilabel classification is a classification problem where multiple target labels can be assigned to each observation instead of only one like in multiclass classification. we decided to use the mlr pakage to help dealing with the multilabel classification task.
+
+Two different  modeling approaches exist for multilabel classification. 
+
+- Problem transformation methods try to transform the multilabel classification into binary or
+multiclass classification problems. 
+
+- Algorithm adaptation methods adapt multiclass algorithms so they can be applied directly to the problem.
+
+
+In multilabel classification each object can belong to more than one category at
+the same time. To be able to use makeMultilabelTask function from mlr, The target columns should be logical vectors that indicate which class labels are present. The names of the target columns are taken as class labels and need to be passed to the target argument of makeMultilabelTask.
+
+
+Scine we decied to use the algorithm adaptation methods, one of  the available algorithm adaptation methods in R are the multivariate random forest in the randomForestSRC package. The folloing plot shows how the randomforest in this case would look like.
+
+```{r}
+myurl <- "https://www.researchgate.net/publication/333604434/figure/fig1/AS:766060559097856@1559654478018/The-process-of-producing-Random-Forest-RF-results.ppm"
+library(magick)
+image_read(myurl)%>%
+  image_negate() %>%
+  image_resize("400x400")
+```
+
+
+
+#### randomForestSRC: Fast Unified Random Forests for Survival, Regression, and Classification (RF-SRC) 
+
+In our spical senario we have classification, the y-outcomes associated with an individual i can be denoted by ${\bf Y}_i = ((Y_{i,1}, \ldots, Y_{i,r})$ where $Y_{i,j}$ is real or categorical for each $Y_{i,j}$. In our case, $Y_{i,j}$ is categorical for all $j \in \{1, \ldots, r \}$ the model is a multivariate classification forest. In this case the split rule statistic is a composite of r split rule statistics based on Weighted Gini Index Splitting. No normalization is necessary since the j-specific statistics represent an impurity measure which is invariant with respect to scale.
+
+
+Weighted Gini index splitting
+
+Suppose the proposed split for the root node is of the form $x<=c$ and $x>c$ for a continuous x variable x, and a split value of c. The impurity of the node is defined as
+
+\begin{equation*}
+\phi({\bf p}) = \sum_{j = 1}^{J} p_j(1 - p_j) = 1 - \sum_{j = 1}^{J}
+p_j^2 .
+\end{equation*}
+
+The Gini index for a split c on x is
+
+\begin{equation*}
+\theta(x,c) = \frac{n_l}{n} \phi({\bf p}_l) + \frac{n_r}{n} \phi({\bf
+p}_r) ,
+\end{equation*}
+
+where, as before, the subscripts l and r indicate left and right daughter node membership respectively, and nl and nr are the number of cases in the daughters such that (n=nl+nr). The goal is to find x and c to minimize
+
+\begin{equation}
+\theta(x,c)  = \frac{n_l}{n} \left( 1 - \sum_{j = 1}^{J}
+\left( \frac{n_{j,l}}{n_l} \right)^2 \right) + \frac{n_r}{n} \left( 1 - \sum_{j =
+1}^{J} \left( \frac{n_{j,r}}{n_r} \right)^2 \right) ,
+\end{equation}
+
+where nj,l and nj,r are the number of cases of class j in the left and right daughter, respectively, such that (nj=nj,l+nj,r). This is equivalent to maximizing
+
+\begin{equation}
+\theta^*(x,c) = \frac{1}{n} \sum_{j = 1}^{J} \frac{n_{j,l}^2}{n_l} +
+\frac{1}{n} \sum_{j = 1}^{J} \frac{(n_j - n_{j,l})^2}{n - n_l}, 
+\label{eqn:classification.weighted}
+\end{equation}
+
+
+Terminal node estimators
+
+- The predicted value for a terminal node $h$ are the class proportions in the node. Let individual $i$ have feature $Xi$. and reside in terminal node $h$. Let $n_j$ equal the number of bootstrap cases of class $j$ in the node. Then the proportion for the $j^{th}$ class is given by
+
+\begin{equation}
+\hat{p}_{j,h} = \frac{1}{n_h} \sum_{{\bf X}_i \in h} I \{Y_i = j \} .
+\label{eqn:class.proportions}
+\end{equation}
+
+- To produce the OOB predicted value for individual $i$ this is averaged over all $ntree$ trees. Let $\hat{p}_{j,b} (Xi)$ denote the predicted value for the $j^{th}$ proportion for tree b in $1,...,ntree$. As before, $I_{i,b}=1$ if individual $i$ is an OOB individual for b in $1,...,ntree$, otherwise set $I_{i,b}=0$. The OOB predicted value for the $j^{th}$ proportion for individual $i$ is
+
+\begin{equation*}
+\hat{p}_{e,j}^{*}({\bf X}_i) = \frac{\sum_{b=1}^{\tt ntree}{I_{i,b}
+\hat{p}_{j,b} ({\bf X}_i)}}{\sum_{b=1}^{\tt tree} I_{i,b}} .
+\end{equation*}
+
+
+
+Prediction error
+
+- There is no prediction error implemented in this scenario
+
+
+
+
+# Model result
+ 
+- The results are obtained by using a random forest algorithm. It is only considered the 200 Cpmpnana obtained from the PCA. For computation time, we did not consider does treatment, duration, and. We also n ly used 50% of the given trained data set. The reason s that this is a code competition that requires the code to run less than 9 hours. One submission to Kaggle takes 18 hours almost since Kaggle will need to run the code twice. The size of the data made it difficult to try other models and use sampling. However, this approach's result scored 0.03680 in the public leaderboard and  0.02923 on the private leaderboard. The private leaderboard is calculated with approximately 80% of the test data. Note: the actual submitted predicted probabilities are replaced with $max(min(p,1-10^{-15}),10^{-15})$ in Kaggle compared to the valuation method mentioned above. A smaller log loss is better. This simple approach was better than 713 teams, and it passed over 376 teams on the private leaderboard. Home wvwer after trying 50 PCAs instewad of 200, the molde performed less, which  resulted in a score of  0.04770 in the public leaderboard and  0.055230 on the private leaderboard. The decline was caused by having less explanation of the variance  from the data.
+
+
+
+# Current Model Summary
+
+- Learner Summary 
+```{r}
+library(readr)
+train <- read_csv("~/Box/Advance NL Class/Final_Project/train_features.csv")
+
+test <- read_csv("~/Box/Advance NL Class/Final_Project/test_features.csv")
+exapmle <- read_csv("~/Box/Advance NL Class/Final_Project/sample_submission.csv")
+
+pca_train <- train[5:876]
+pca = prcomp(pca_train,scale. = T)
+loadings <- as.data.frame(pca$x)
+Matrix <- pca$rotation
+std_dev <- pca$sdev
+pr_comp_var <- std_dev^2
+prop_var_ex <- pr_comp_var/sum(pr_comp_var)
+#plot(cumsum(prop_var_ex), xlab = "Principal Component",ylab = "Proportion of Variance Explained",type = "b")
+train <- cbind(train[1:4],loadings[1:200])
+
+
+# test data reduction 
+pca_train <- test[5:876 ]
+pca = prcomp(pca_train,scale. = T)
+loadings <- as.data.frame(pca$x)
+Matrix <- pca$rotation
+std_dev <- pca$sdev
+pr_comp_var <- std_dev^2
+prop_var_ex <- pr_comp_var/sum(pr_comp_var)
+#plot(cumsum(prop_var_ex), xlab = "Principal Component",ylab = "Proportion of Variance Explained",type = "b")
+test <- cbind(test[1:4],loadings[1:200])
+
+
+```
+
+```{r}
+library(dplyr)
+targets <- read_csv("~/Box/Advance NL Class/Final_Project/train_targets_scored.csv")
+targets[,2:ncol(targets)] <- targets[,2:ncol(targets)] %>% mutate_all(as.logical)
+
+training <- train %>%
+    left_join(targets %>% rename_with(.fn = ~paste0("target_", .), .cols = -sig_id),
+              by = "sig_id")
+
+library(mlr)
+colnames(training) <- make.names(colnames(training), unique = TRUE) # fix naming problrm 
+
+```
+
+
+```{r}
+set.seed(2020)
+# Data prepration 
+library(caret)
+trainIndex <- createDataPartition(training$cp_type, p = 0.05, 
+                                  list = FALSE, 
+                                  times = 1)
+the_train <- training[ trainIndex,]
+the_test  <- training[-trainIndex,]
+
+
+
+```
+
+
+```{r}
+
+# Creating a task 
+labels = the_train %>%  select(starts_with("target")) %>% colnames()
+yeast.task = makeMultilabelTask(id = "multi", data = the_train[-c(1:4)],
+target = labels)
+
+
+lrn.rfsrc = makeLearner("multilabel.randomForestSRC",predict.type = "prob")
+# Model fitting
+mod = mlr:::train(lrn.rfsrc, yeast.task)
+
+```
+
+```{r}
+lrn.rfsrc
+```
+
+- Model Summary 
+
+
+- Multilabel Confusion Matrix
+```{r}
+myurl <- "https://www.alialghaithi.com/uploads/9/9/0/2/99023322/screen-shot-2020-12-20-at-11-31-00-pm_orig.png"
+library(magick)
+image_read(myurl)%>%
+  image_resize("500x500")
+```
+
+
+
+```{r}
+
+mod$learner.model
+```
+
+
+
+
+
+## Second apprache: Binary Relevance
+
+Binary relevance is arguably the most natural solution for learning from multi-label examples. It works by decomposing the multi-label learning task into several independent binary learning tasks (one per class label). In binary relevance, this problem is broken into 206 different single class classification problems. The figure below shows a short example how this method can be applied.
+
+
+```{r}
+
+myurl <- "https://www.alialghaithi.com/uploads/9/9/0/2/99023322/screen-shot-2020-12-20-at-9-51-12-pm_orig.png"
+library(magick)
+image_read(myurl)%>%
+  image_negate() %>%
+  image_resize("200x100")
+
+```
+
+
+
+```{r}
+
+library(readr)
+library(dplyr)
+targets <- read_csv("~/Box/Advance NL Class/Final_Project/train_targets_scored.csv")
+
+training <- train %>%
+    left_join(targets %>% rename_with(.fn = ~paste0("target_", .), .cols = -sig_id),
+              by = "sig_id")
+
+library(mlr)
+colnames(training) <- make.names(colnames(training), unique = TRUE) # fix naming problrm 
+
+
+set.seed(2020)
+# Data prepration 
+library(caret)
+trainIndex <- createDataPartition(training$cp_type, p = 1, 
+                                  list = FALSE, 
+                                  times = 1)
+the_train <- training[ trainIndex,]
+the_test  <- training[-trainIndex,]
+
+
+
+
+
+set.seed(2020)
+exapmle[,2:ncol(exapmle)] <- NA
+A <- the_train[287]
+A_ex <- exapmle[84]
+
+the_train<- the_train[-287]
+exapmle <- exapmle[-84]
+
+# model
+for (i in 1:1)
+{
+sampsize<- table(the_train[,204+i])[[2]]
+library(randomForest)  # random forest modeling
+RF <- randomForest(as.factor(the_train[,204+i]) ~ .,
+                           data = the_train[,c(2:204)],
+                           ntree=1000,sampsize=c(sampsize,sampsize),cutoff = c(0.4, 0.6),importance=T)
+# Predictions on the test data
+y_pred <- predict(RF, test,type = "prob")
+exapmle[,1+i] <- y_pred[,2]
+}
+```
+
+The bellow model summary from the random forest with adjusted salmpesize parameter for the unbalanced issue with the data. This model summary only for one of the labels of this data. Following the approach, there will be 206 models that will be needed. 
+
+```{r}
+RF
+```
+
+Dotchart of variable importance as measured by a Random Forest as mentioned above.
+
+```{r}
+A_ex[1]=0
+final<- cbind(exapmle,A_ex)
+varImpPlot(RF,type=1,
+           main="Variable Importance (Accuracy)",
+           sub = "Random Forest Model")
+
+```
+
+
+
+# Conculation on the Binary Relevance, 
+
+from the simlistcy side , this apprache made it simple to modle the data. Hoever, this apprache resulted in pooor performance comparing to the apdatctibe method.it  resulted in a score of  0.082234 in the public leaderboard and  0.089670 on the private leaderboard.
+
+
+
+# Summary
+
+In general, multilabel classification problems are very challenging, and it is messy when the size of the data is big.  The preparation methods to solve this type of problem mentioned in this report, we introduced two main concepts of multilabel classification problems. The report covers the Adapted Algorithm and Binary Relevance. 
+
+The Interesting findings from both methods are that for this specific problem, the Adapted Algorithm method performs better than the binary relevance method. Also, the more PCAs we include, the better model we have. However, dealing with these classification problems requires more computing power. The binary relevance method did not fit this data because of the way this problem was set to be solved. We find that it is important that we build a model that takes consideration of all the labels at once to reduce the error rate. 
+
+The further work of this project can be looped around finding new ways to reduce the variables and rows of the data. The use of cross-validation and other sampling techniques can help reduce the computing time and increase accuracy over all the labels. Future work could also take consideration of some of the variable that was not included in this project.  In summary, working with multilabel classification problems can be very beneficial to learn more machine learning technics and what steps to take towered solving new challenges.
+
+
+
+
+# Citations 
+
+##  Deep Learning with Keras & TensorFlow in R | Multilayer Perceptron for Multiclass Classification
+- Talk: https://www.youtube.com/watch?v=hd81EH1g1bE
+
+## www.kaggle.com recipe 
+- https://www.kaggle.com/kailex/moa-transfer-recipe-with-smoothing
+
+## mlr Tutorial 
+- Paper: https://arxiv.org/pdf/1609.06146.pdf
+
+## reducing 
+- https://www.datavedas.com/dimensionality-reduction-in-r/#:~:text=There%20are%20many%20modeling,Component%20Analysis%20and%20Factor%20Analysis.
+
+## Paper: Extreme Classification: A New Paradigm for Ranking & Recommendation
+- Paper:http://manikvarma.org/pubs/agrawal13.pdf
+- Talk: https://www.youtube.com/watch?v=1X71fTx1LKA
+
+## Efficient Multi-label Classification with Many Labels
+- Paper:http://proceedings.mlr.press/v28/bi13.pdf
+
+## The utiml Package: Multi-label Classification in R
+- https://journal.r-project.org/archive/2018/RJ-2018-041/RJ-2018-041.pdf
+
+
+# Working with Multilabel Datasets in R: The mldr Package
+- Paper: https://journal.r-project.org/archive/2015/RJ-2015-027/RJ-2015-027.pdf
+
+## Extreme Multi-label Learning via Nearest Neighbor Graph Partitioning and Embedding 
+- Talk: https://www.microsoft.com/en-us/research/video/extreme-multi-label-learning-via-nearest-neighbor-graph-partitioning-embedding/
+
+## Theory and Specifications: Random Forests for Survival, Regression,and Classification
+https://kogalur.github.io/randomForestSRC/theory.html#section8.4
